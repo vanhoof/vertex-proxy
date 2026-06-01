@@ -21,10 +21,14 @@ class Settings(BaseSettings):
     # Path to service-account JSON. Uses GOOGLE_APPLICATION_CREDENTIALS if unset.
     credentials_path: Path | None = None
     project_id: str | None = None
-    # Region for Claude (Anthropic) models. us-east5 is the primary serving region.
+    # Region for Claude (Anthropic) models. "global" routes via the global
+    # control plane (aiplatform.googleapis.com); regional values like
+    # "us-east5" route via {region}-aiplatform.googleapis.com.
     anthropic_region: str = "us-east5"
     # Region for Gemini models. us-central1 has the widest coverage.
     gemini_region: str = "us-central1"
+    # Region for Vertex MaaS (Model as a Service) open-source partner models.
+    maas_region: str = "us-central1"
 
     # --- Server ---
     host: str = "127.0.0.1"
@@ -52,15 +56,23 @@ class Settings(BaseSettings):
     # Hermes/Claude-Code typically request `claude-sonnet-4-5-20250929`; Vertex
     # uses `claude-sonnet-4-5@20250929`. The proxy translates.
     anthropic_model_aliases: dict[str, str] = {
+        # Opus 4.6
+        "claude-opus-4-6": "claude-opus-4-6",
+        "claude-opus-4.6": "claude-opus-4-6",
+        # Sonnet 4.6
+        "claude-sonnet-4-6": "claude-sonnet-4-6",
+        "claude-sonnet-4.6": "claude-sonnet-4-6",
         # Sonnet 4.5
         "claude-sonnet-4-5": "claude-sonnet-4-5@20250929",
         "claude-sonnet-4-5-20250929": "claude-sonnet-4-5@20250929",
-        # Opus 4.5
-        "claude-opus-4-5": "claude-opus-4-5@20250929",
-        "claude-opus-4-5-20250929": "claude-opus-4-5@20250929",
+        "claude-sonnet-4": "claude-sonnet-4-5@20250929",
+        # Opus 4
+        "claude-opus-4-5": "claude-opus-4@20250514",
+        "claude-opus-4": "claude-opus-4@20250514",
         # Haiku 4.5
-        "claude-haiku-4-5": "claude-haiku-4-5@20250929",
-        "claude-haiku-4-5-20250929": "claude-haiku-4-5@20250929",
+        "claude-haiku-4-5": "claude-haiku-4-5@20251001",
+        "claude-haiku-4-5-20251001": "claude-haiku-4-5@20251001",
+        "claude-haiku": "claude-haiku-4-5@20251001",
     }
 
     # Map canonical Gemini model names → Vertex publisher model IDs.
