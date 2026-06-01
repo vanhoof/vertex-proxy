@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Region for Claude (Anthropic) models. "global" routes via the global
     # control plane (aiplatform.googleapis.com); regional values like
     # "us-east5" route via {region}-aiplatform.googleapis.com.
-    anthropic_region: str = "us-east5"
+    anthropic_region: str = "global"
     # Region for Gemini models. us-central1 has the widest coverage.
     gemini_region: str = "us-central1"
     # Region for Vertex MaaS (Model as a Service) open-source partner models.
