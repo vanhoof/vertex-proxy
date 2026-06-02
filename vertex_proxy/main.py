@@ -184,6 +184,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return PlainTextResponse(_METRICS.render(), media_type="text/plain; version=0.0.4")
 
     @app.get("/v1/models", dependencies=[Depends(require_api_key)])
+    @app.get("/anthropic/v1/models", dependencies=[Depends(require_api_key)])
+    @app.get("/anthropic/models", dependencies=[Depends(require_api_key)])
+    @app.get("/openai/v1/models", dependencies=[Depends(require_api_key)])
+    @app.get("/openai/models", dependencies=[Depends(require_api_key)])
     async def list_models() -> dict[str, Any]:
         return {
             "object": "list",
