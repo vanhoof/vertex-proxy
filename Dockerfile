@@ -20,12 +20,14 @@ WORKDIR /app
 USER vertex
 
 ENV VERTEX_PROXY_HOST=0.0.0.0 \
-    VERTEX_PROXY_PORT=8787 \
+    VERTEX_PROXY_PORT=8780 \
     PYTHONUNBUFFERED=1
 
-EXPOSE 8787
+# Port is configured via VERTEX_PROXY_PORT env var and mapped in docker-compose.
+# No EXPOSE directive: podman-compose auto-publishes EXPOSE ports, causing
+# conflicts when running alongside a native instance on the same host.
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3).status==200 else 1)"
+    CMD python -c "import os,urllib.request,sys; p=os.environ.get('VERTEX_PROXY_PORT','8787'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/health',timeout=3).status==200 else 1)"
 
 ENTRYPOINT ["vertex-proxy"]

@@ -1,0 +1,43 @@
+# vertex-proxy containerized deployment
+#
+# Runs vertex-proxy in a container, mounting gcloud ADC for Vertex AI auth.
+# Works with podman or docker.
+#
+# Usage:
+#   podman compose up -d --build
+#   podman compose logs -f vertex-proxy
+#
+# The container listens on :8788 (mapped from internal :8787).
+# Set VERTEX_PROXY_PROJECT_ID in .env or export it before running.
+#
+# Auth: mounts your gcloud ADC file into the container read-only.
+# Override GOOGLE_ADC_PATH if your ADC file is elsewhere.
+
+services:
+  vertex-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8788:8780"
+    environment:
+      - VERTEX_PROXY_PROJECT_ID=${VERTEX_PROXY_PROJECT_ID:-}
+      - VERTEX_PROXY_ANTHROPIC_REGION=${VERTEX_PROXY_ANTHROPIC_REGION:-global}
+      - VERTEX_PROXY_GEMINI_REGION=${VERTEX_PROXY_GEMINI_REGION:-us-central1}
+      - VERTEX_PROXY_EMBEDDING_REGION=${VERTEX_PROXY_EMBEDDING_REGION:-global}
+      - VERTEX_PROXY_MAAS_REGION=${VERTEX_PROXY_MAAS_REGION:-us-central1}
+      - VERTEX_PROXY_HOST=0.0.0.0
+      - VERTEX_PROXY_PORT=8780
+      - VERTEX_PROXY_LOG_LEVEL=${VERTEX_PROXY_LOG_LEVEL:-info}
+      - VERTEX_PROXY_METRICS_ENABLED=${VERTEX_PROXY_METRICS_ENABLED:-false}
+      - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcloud/adc.json
+    volumes:
+      - ${GOOGLE_ADC_PATH:-~/.config/gcloud/application_default_credentials.json}:/run/secrets/gcloud/adc.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
