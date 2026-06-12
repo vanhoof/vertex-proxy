@@ -7,7 +7,7 @@
 #   podman compose up -d --build
 #   podman compose logs -f vertex-proxy
 #
-# The container listens on :8788 (mapped from internal :8787).
+# The container listens on :8788 (mapped from internal :8780).
 # Set VERTEX_PROXY_PROJECT_ID in .env or export it before running.
 #
 # Auth: mounts your gcloud ADC file into the container read-only.
@@ -35,7 +35,7 @@ services:
       - ${GOOGLE_ADC_PATH:-~/.config/gcloud/application_default_credentials.json}:/run/secrets/gcloud/adc.json:ro
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/health',timeout=3).status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import os,urllib.request,sys; p=os.environ.get('VERTEX_PROXY_PORT','8780'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{p}/health',timeout=3).status==200 else 1)"]
       interval: 30s
       timeout: 5s
       start_period: 15s
