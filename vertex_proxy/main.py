@@ -215,6 +215,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 {
                     "id": alias,
                     "object": "model",
+                    "vertex_model_id": real,
+                    "provider": "google-vertex-embedding",
+                    "region": cfg.embedding_region,
+                }
+                for alias, real in cfg.embedding_model_aliases.items()
+            ]
+            + [
+                {
+                    "id": alias,
+                    "object": "model",
                     "vertex_model_id": path,
                     "provider": "maas-vertex",
                     "region": cfg.maas_region,
@@ -247,6 +257,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/v1beta/models/{model_and_action:path}", dependencies=[Depends(require_api_key)])
     async def gemini_generate_root(model_and_action: str, request: Request) -> Any:
         return await _handle_gemini(model_and_action, request, cfg, token_mgr)
+
+    # --- Embeddings routes (OpenAI-compatible) ---------------------------------
+    # Vertex AI text-embedding models (text-embedding-005 etc.) exposed as
+    # POST /v1/embeddings (OpenAI format) so Honcho and other clients work
+    # out of the box.
+
+    @app.post("/openai/v1/embeddings", dependencies=[Depends(require_api_key)])
+    async def openai_embeddings(request: Request) -> Any:
+        return await _handle_embeddings(request, cfg, token_mgr)
+
+    @app.post("/v1/embeddings", dependencies=[Depends(require_api_key)])
+    async def openai_embeddings_root(request: Request) -> Any:
+        return await _handle_embeddings(request, cfg, token_mgr)
 
     # --- OpenAI-compatible route for Vertex MaaS models ------------------------
     # Kimi K2.5, GLM 5, MiniMax-M2.5, Qwen 3.5, Grok 4.20, etc.
@@ -281,6 +304,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             model_id in cfg.anthropic_model_aliases
             or model_id in cfg.gemini_model_aliases
             or model_id in cfg.maas_model_aliases
+            or model_id in cfg.embedding_model_aliases
             or model_id.startswith("google/")
         ):
             return {"id": model_id, "object": "model", "owned_by": "vertex-proxy"}
@@ -547,6 +571,105 @@ async def _handle_gemini(
         raise HTTPException(status_code=502, detail=f"upstream error: {exc}") from exc
 
     return _passthrough_response(resp, route="gemini", model=requested_model)
+
+
+# --- Embeddings handler (OpenAI → Vertex AI Predict) -----------------------
+
+
+async def _handle_embeddings(
+    request: Request, cfg: Settings, tm: TokenManager
+) -> Any:
+    """Translate OpenAI POST /v1/embeddings to Vertex AI predict endpoint."""
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="request body must be JSON") from exc
+
+    requested_model = (body.get("model") or "").strip()
+    if not requested_model:
+        raise HTTPException(status_code=400, detail="missing 'model' in request body")
+
+    vertex_model = cfg.embedding_model_aliases.get(requested_model)
+    if vertex_model is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"unknown embedding model '{requested_model}'. "
+                f"known aliases: {sorted(cfg.embedding_model_aliases.keys())}"
+            ),
+        )
+
+    # Normalize input to list of strings.
+    inp = body.get("input", "")
+    if isinstance(inp, str):
+        inp = [inp]
+    elif not isinstance(inp, list):
+        raise HTTPException(status_code=400, detail="'input' must be a string or list of strings")
+
+    # Build Vertex AI Predict request.
+    instances = [{"content": text} for text in inp]
+    vertex_body: dict[str, Any] = {"instances": instances}
+
+    # Pass through dimensions if requested (text-embedding-005 supports it).
+    dimensions = body.get("dimensions")
+    if dimensions is not None:
+        vertex_body["parameters"] = {"outputDimensionality": int(dimensions)}
+
+    base = _vertex_base_url(cfg.embedding_region)
+    url = (
+        f"{base}/v1/projects/"
+        f"{cfg.project_id}/locations/{cfg.embedding_region}/publishers/google/"
+        f"models/{vertex_model}:predict"
+    )
+
+    token = await tm.get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+    logger.info("embeddings: model=%s → vertex_model=%s inputs=%d", requested_model, vertex_model, len(inp))
+
+    http: httpx.AsyncClient = request.app.state.http
+    try:
+        resp = await http.post(url, headers=headers, json=vertex_body)
+    except httpx.HTTPError as exc:
+        logger.error("embeddings upstream error: %s", exc)
+        raise HTTPException(status_code=502, detail=f"upstream error: {exc}") from exc
+
+    if resp.status_code >= 400:
+        _METRICS.record_request("embeddings", requested_model, resp.status_code)
+        return JSONResponse(status_code=resp.status_code, content=resp.json())
+
+    result = resp.json()
+
+    # Translate Vertex AI Predict response to OpenAI embeddings format.
+    data = []
+    total_tokens = 0
+    for i, pred in enumerate(result.get("predictions", [])):
+        values = pred.get("embeddings", {}).get("values", [])
+        stats = pred.get("embeddings", {}).get("statistics", {})
+        total_tokens += stats.get("token_count", 0)
+        data.append({
+            "object": "embedding",
+            "index": i,
+            "embedding": values,
+        })
+
+    openai_response = {
+        "object": "list",
+        "data": data,
+        "model": requested_model,
+        "usage": {
+            "prompt_tokens": total_tokens,
+            "total_tokens": total_tokens,
+        },
+    }
+
+    _METRICS.record_request("embeddings", requested_model, 200)
+    _METRICS.record_tokens(requested_model, total_tokens, 0)
+
+    return JSONResponse(content=openai_response)
 
 
 # --- OpenAI-compatible (Vertex MaaS) handler -------------------------------

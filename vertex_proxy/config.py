@@ -75,11 +75,20 @@ class Settings(BaseSettings):
         "claude-haiku": "claude-haiku-4-5@20251001",
     }
 
+    # Region for embedding models (text-embedding-005 etc.).
+    embedding_region: str = "global"
+
+    # Map canonical embedding model names to Vertex publisher model IDs.
+    embedding_model_aliases: dict[str, str] = {
+        "text-embedding-005": "text-embedding-005",
+        "text-embedding-004": "text-embedding-004",
+    }
+
     # Map canonical Gemini model names → Vertex publisher model IDs.
     gemini_model_aliases: dict[str, str] = {
         "gemini-2.5-pro": "gemini-2.5-pro",
         "gemini-2.5-flash": "gemini-2.5-flash",
-        "gemini-2.0-flash": "gemini-2.0-flash-001",
+        "gemini-2.0-flash": "gemini-2.0-flash",
     }
 
     # Region for Vertex MaaS (Model as a Service) open-source partner models:
