@@ -433,6 +433,21 @@ async def _handle_openai_to_anthropic(
     if body.get("stream"):
         anthropic_body["stream"] = True
 
+    # Translate OpenAI's response_format (json_schema mode) into Anthropic's
+    # output_config.format. Without this, structured-output callers (e.g.
+    # Honcho's deriver) silently get free-form prose back instead of the
+    # schema-constrained JSON they asked for -- the request still returns
+    # 200 OK, but downstream JSON parsing then fails on non-JSON content.
+    #   OpenAI shape:    {"type": "json_schema", "json_schema": {"name", "schema", ...}}
+    #   Anthropic shape: {"format": {"type": "json_schema", "schema": {...}}}
+    response_format = body.get("response_format")
+    if isinstance(response_format, dict) and response_format.get("type") == "json_schema":
+        schema = response_format.get("json_schema", {}).get("schema")
+        if schema is not None:
+            anthropic_body["output_config"] = {
+                "format": {"type": "json_schema", "schema": schema}
+            }
+
     # Forward to the Anthropic handler path.
     upstream_body = {k: v for k, v in anthropic_body.items() if k != "model"}
     upstream_body.setdefault("anthropic_version", "vertex-2023-10-16")
@@ -453,10 +468,11 @@ async def _handle_openai_to_anthropic(
     }
 
     logger.info(
-        "openai→anthropic: model=%s → vertex_model=%s streaming=%s",
+        "openai→anthropic: model=%s → vertex_model=%s streaming=%s structured=%s",
         requested_model,
         vertex_model,
         streaming,
+        "output_config" in anthropic_body,
     )
 
     http: httpx.AsyncClient = request.app.state.http

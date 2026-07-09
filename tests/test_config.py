@@ -58,3 +58,13 @@ def test_env_override(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     s = Settings()
     assert s.port == 9999
     assert s.anthropic_region == "europe-west4"
+
+
+def test_embedding_aliases_include_gemini_and_text_embedding() -> None:
+    """gemini-embedding-* were added alongside text-embedding-* for orgs whose
+    vertexai.allowedModels policy permits the former but not the latter."""
+    s = Settings()
+    assert "text-embedding-005" in s.embedding_model_aliases
+    assert "text-embedding-004" in s.embedding_model_aliases
+    assert "gemini-embedding-001" in s.embedding_model_aliases
+    assert "gemini-embedding-2" in s.embedding_model_aliases

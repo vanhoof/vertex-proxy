@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     embedding_model_aliases: dict[str, str] = {
         "text-embedding-005": "text-embedding-005",
         "text-embedding-004": "text-embedding-004",
+        "gemini-embedding-001": "gemini-embedding-001",
+        "gemini-embedding-2": "gemini-embedding-2",
     }
 
     # Map canonical Gemini model names → Vertex publisher model IDs.

@@ -178,6 +178,74 @@ def test_anthropic_model_alias_resolution() -> None:
         assert body["anthropic_version"] == "vertex-2023-10-16"
 
 
+def test_openai_response_format_translated_to_anthropic_output_config() -> None:
+    """OpenAI callers (e.g. Honcho's deriver) send response_format for
+    structured JSON output. Without translation, Vertex silently ignores
+    it and Claude returns free-form prose that breaks downstream JSON
+    parsing -- see vertex-proxy config.py embedding-alias fix session,
+    2026-07-08. Anthropic's equivalent is output_config.format."""
+    captured: dict[str, Any] = {}
+    app, _ = _build_test_app(captured)
+    with TestClient(app) as client:
+        mock_http = _install_mock_http(client)
+        mock_http.post.return_value = httpx.Response(
+            200,
+            json={
+                "id": "msg_test",
+                "content": [{"type": "text", "text": '{"observations": []}'}],
+            },
+            request=httpx.Request("POST", "http://x"),
+        )
+
+        schema = {
+            "type": "object",
+            "properties": {"observations": {"type": "array", "items": {"type": "string"}}},
+            "required": ["observations"],
+        }
+        r = client.post(
+            "/openai/v1/chat/completions",
+            json={
+                "model": "claude-haiku-4-5",
+                "messages": [{"role": "user", "content": "extract"}],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {"name": "Observations", "schema": schema},
+                },
+            },
+        )
+        assert r.status_code == 200
+        call_args = mock_http.post.await_args
+        body = call_args.kwargs["json"]
+        assert body["output_config"] == {"format": {"type": "json_schema", "schema": schema}}
+
+
+def test_openai_response_format_missing_is_not_forwarded() -> None:
+    """Plain OpenAI-wire requests without response_format must not gain a
+    spurious output_config -- only translate when the caller actually asked
+    for structured output."""
+    captured: dict[str, Any] = {}
+    app, _ = _build_test_app(captured)
+    with TestClient(app) as client:
+        mock_http = _install_mock_http(client)
+        mock_http.post.return_value = httpx.Response(
+            200,
+            json={"id": "msg_test", "content": [{"type": "text", "text": "ok"}]},
+            request=httpx.Request("POST", "http://x"),
+        )
+
+        r = client.post(
+            "/openai/v1/chat/completions",
+            json={
+                "model": "claude-haiku-4-5",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+        )
+        assert r.status_code == 200
+        call_args = mock_http.post.await_args
+        body = call_args.kwargs["json"]
+        assert "output_config" not in body
+
+
 def test_gemini_path_forwarding() -> None:
     captured: dict[str, Any] = {}
     app, _ = _build_test_app(captured)
